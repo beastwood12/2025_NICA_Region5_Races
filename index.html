@@ -7,14 +7,416 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.5.0/dist/Recharts.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; }
-    </style>
 </head>
 <body>
     <div id="root"></div>
-    <script type="text/babel" src="app.js"></script>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const App = () => {
+          const [raceData, setRaceData] = useState([]);
+          const [loading, setLoading] = useState(true);
+          const [error, setError] = useState(null);
+          const [selectedRider, setSelectedRider] = useState('');
+          const [searchTerm, setSearchTerm] = useState('');
+          const [showDropdown, setShowDropdown] = useState(false);
+
+          // Load race data from external JSON file
+          useEffect(() => {
+            fetch('race_data.json')
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error('Failed to load race data');
+                }
+                return response.json();
+              })
+              .then(data => {
+                setRaceData(data);
+                setLoading(false);
+                // Set first rider as default
+                const firstRider = [...new Set(data.map(d => d.Name))].sort()[0];
+                setSelectedRider(firstRider);
+              })
+              .catch(err => {
+                setError(err.message);
+                setLoading(false);
+              });
+          }, []);
+
+          // Get unique riders with their teams
+          const riderWithTeam = raceData.length > 0 
+            ? [...new Set(raceData.map(d => d.Name))].sort().map(name => {
+                const riderData = raceData.find(d => d.Name === name);
+                return {
+                  name: name,
+                  team: riderData?.Team || '',
+                  races: raceData.filter(d => d.Name === name).length
+                };
+              })
+            : [];
+
+          // Filter riders based on search
+          const filteredRiders = riderWithTeam.filter(rider => 
+            rider.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            rider.team.toLowerCase().includes(searchTerm.toLowerCase())
+          );
+          
+          // Get data for selected rider
+          const riderRaces = raceData
+            .filter(d => d.Name === selectedRider)
+            .sort((a, b) => a.RaceNum - b.RaceNum);
+          const riderTeam = riderRaces[0]?.Team || '';
+          
+          // Calculate stats
+          const totalRaces = riderRaces.length;
+          const bestPlacement = riderRaces.length > 0 
+            ? Math.min(...riderRaces.map(r => parseInt(r.Placement))) 
+            : 0;
+          const podiumCount = riderRaces.filter(r => parseInt(r.Placement) <= 5).length;
+
+          // Format time helper
+          const formatTime = (seconds) => {
+            if (!seconds) return 'DNF';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            const ms = Math.floor((seconds % 1) * 100);
+            return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+          };
+
+          // Helper to parse lap time strings to seconds
+          const parseTimeToSeconds = (timeStr) => {
+            if (!timeStr) return null;
+            const parts = timeStr.split(':');
+            if (parts.length === 2) {
+              return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+            }
+            return null;
+          };
+
+          // Generate race analysis with encouragement and actionable advice
+          const generateRaceAnalysis = (race, idx, allRaces) => {
+            const placement = parseInt(race.Placement);
+            const isPodium = placement <= 5;
+            
+            // Compare to previous race if available
+            const prevRace = idx > 0 ? allRaces[idx - 1] : null;
+            const placementChange = prevRace ? parseInt(prevRace.Placement) - placement : null;
+            
+            // Check if this is first race
+            const isFirstRace = idx === 0;
+            
+            // Calculate lap consistency for multi-lap races
+            const lap1Seconds = race.LAP1 ? parseTimeToSeconds(race.LAP1) : null;
+            const lap2Seconds = race.LAP2 ? parseTimeToSeconds(race.LAP2) : null;
+            let lapDifference = null;
+            if (lap1Seconds && lap2Seconds) {
+              lapDifference = lap2Seconds - lap1Seconds;
+            }
+            
+            // Build encouraging analysis
+            let analysis = '';
+            let focus = '';
+            
+            if (isFirstRace) {
+              if (isPodium) {
+                analysis = `Fantastic start to the season with a top 5 finish! You're showing great potential right out of the gate.`;
+                focus = `Focus on: Maintaining this momentum. Keep your training consistent and work on race-day nutrition to sustain energy.`;
+              } else if (placement <= 10) {
+                analysis = `Great first race of the year! Breaking into the top 10 is a solid foundation to build on.`;
+                focus = `Focus on: Study the riders ahead of you. What lines are they taking? Where are they gaining time?`;
+              } else {
+                analysis = `First race of the year! Everyone starts somewhere, and you're building valuable experience.`;
+                focus = `Focus on: Ride at a sustainable pace. Many riders go too hard early—consistent effort beats early burnout.`;
+              }
+            } else {
+              // Not first race - compare to previous
+              if (placementChange > 0) {
+                analysis = `Excellent progress! You moved up ${placementChange} place${placementChange > 1 ? 's' : ''} from last race. Your hard work is paying off!`;
+                focus = `Focus on: Whatever you changed is working! Keep that training approach and look for small refinements.`;
+              } else if (placementChange < 0) {
+                analysis = `You dropped ${Math.abs(placementChange)} place${Math.abs(placementChange) > 1 ? 's' : ''} this race, but remember—different courses favor different strengths and competition varies.`;
+                focus = `Focus on: Review what felt different. Was it pacing, nutrition, or just a tougher field? Adjust and come back stronger.`;
+              } else {
+                analysis = `Consistent performance! Maintaining your placement shows you're holding your fitness level against the competition.`;
+                focus = `Focus on: To level up, add one intensity session per week—intervals or hill repeats can break through plateaus.`;
+              }
+            }
+            
+            // Add lap-specific coaching if multi-lap race
+            if (lapDifference !== null) {
+              if (lapDifference > 120) {
+                focus += ` Your second lap was ${Math.floor(lapDifference)}s slower—work on pacing strategy to maintain speed through the whole race.`;
+              } else if (lapDifference < 30) {
+                focus += ` Great lap consistency! Your even pacing is a strength to maintain.`;
+              }
+            }
+            
+            return { analysis, focus };
+          };
+
+          // Loading state
+          if (loading) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6 flex items-center justify-center">
+                <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-lg font-semibold text-gray-700">Loading race data...</p>
+                </div>
+              </div>
+            );
+          }
+
+          // Error state
+          if (error) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6 flex items-center justify-center">
+                <div className="bg-white rounded-lg shadow-lg p-8 text-center max-w-md">
+                  <div className="text-red-600 text-5xl mb-4">⚠️</div>
+                  <h2 className="text-xl font-bold text-gray-900 mb-2">Failed to Load Data</h2>
+                  <p className="text-gray-600 mb-4">{error}</p>
+                  <p className="text-sm text-gray-500">Make sure race_data.json is in the same directory as this HTML file.</p>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4 md:p-6">
+              {/* Success Banner */}
+              <div className="bg-green-500 text-white p-3 rounded-lg mb-4 text-center font-bold shadow-lg">
+                ✅ PRODUCTION VERSION - {raceData.length} entries | {riderWithTeam.length} riders
+              </div>
+
+              {/* Header */}
+              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+                  🚵 Utah HS MTB Racing Analytics
+                </h1>
+                <p className="text-gray-600 mt-1 md:mt-2">2025 Region 5 Season - Individual Racer Analysis</p>
+              </div>
+
+              {/* Rider Selection - Searchable Dropdown */}
+              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h2 className="text-lg md:text-xl font-bold mb-3">Select a Rider</h2>
+                
+                <div className="relative">
+                  {/* Search Input */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search by rider name or team..."
+                      value={searchTerm}
+                      onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        setShowDropdown(true);
+                      }}
+                      onFocus={() => setShowDropdown(true)}
+                      className="w-full px-4 py-3 pr-10 text-base border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                    />
+                    <svg 
+                      className="absolute right-3 top-3.5 w-5 h-5 text-gray-400"
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+
+                  {/* Dropdown Results */}
+                  {showDropdown && filteredRiders.length > 0 && (
+                    <div className="absolute z-20 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                      {filteredRiders.map(rider => (
+                        <button
+                          key={rider.name}
+                          onClick={() => {
+                            setSelectedRider(rider.name);
+                            setSearchTerm('');
+                            setShowDropdown(false);
+                          }}
+                          className={`w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0 ${
+                            selectedRider === rider.name ? 'bg-blue-100' : ''
+                          }`}
+                        >
+                          <div className="font-semibold text-gray-900">{rider.name}</div>
+                          <div className="text-sm text-gray-600">{rider.team} • {rider.races} races</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* No Results */}
+                  {showDropdown && searchTerm && filteredRiders.length === 0 && (
+                    <div className="absolute z-20 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-lg p-4 text-gray-500 text-center">
+                      No riders found matching "{searchTerm}"
+                    </div>
+                  )}
+                </div>
+
+                {/* Currently Selected Rider Display */}
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
+                  <div className="text-sm text-gray-600 mb-1">Currently viewing:</div>
+                  <div className="font-bold text-lg text-gray-900">{selectedRider}</div>
+                  <div className="text-sm text-gray-600">
+                    {riderWithTeam.find(r => r.name === selectedRider)?.team} • {riderWithTeam.find(r => r.name === selectedRider)?.races} races
+                  </div>
+                </div>
+
+                {/* Click outside to close dropdown */}
+                {showDropdown && (
+                  <div 
+                    className="fixed inset-0 z-10" 
+                    onClick={() => setShowDropdown(false)}
+                  />
+                )}
+              </div>
+
+              {/* Rider Profile Header */}
+              <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h2 className="text-2xl md:text-3xl font-bold">{selectedRider}</h2>
+                <p className="text-lg md:text-xl mt-1 md:mt-2 opacity-90">{riderTeam}</p>
+                
+                <div className="grid grid-cols-3 gap-3 md:gap-4 mt-4">
+                  <div className="bg-white/20 backdrop-blur-sm px-3 md:px-6 py-2 md:py-3 rounded-lg">
+                    <div className="text-xs md:text-sm opacity-90">Total Races</div>
+                    <div className="text-xl md:text-3xl font-bold">{totalRaces}</div>
+                  </div>
+                  <div className="bg-white/20 backdrop-blur-sm px-3 md:px-6 py-2 md:py-3 rounded-lg">
+                    <div className="text-xs md:text-sm opacity-90">Best Placement</div>
+                    <div className="text-xl md:text-3xl font-bold">#{bestPlacement}</div>
+                  </div>
+                  <div className="bg-white/20 backdrop-blur-sm px-3 md:px-6 py-2 md:py-3 rounded-lg">
+                    <div className="text-xs md:text-sm opacity-90">Podium Finishes</div>
+                    <div className="text-xl md:text-3xl font-bold">{podiumCount}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Race Results Comparison Table */}
+              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h3 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">Race-by-Race Performance</h3>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b-2 border-gray-300">
+                        <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-gray-50 sticky left-0 z-10"></th>
+                        {riderRaces.map((race, idx) => {
+                          const isPodium = parseInt(race.Placement) <= 5;
+                          return (
+                            <th key={idx} className={`px-3 py-2 text-left font-bold text-gray-900 min-w-[180px] ${isPodium ? 'bg-yellow-50' : ''}`}>
+                              <div className="flex items-center gap-2">
+                                {race.Race}
+                                {isPodium && <span className="text-yellow-600">🏆</span>}
+                              </div>
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Category */}
+                      <tr className="border-b bg-gray-50">
+                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Category</td>
+                        {riderRaces.map((race, idx) => (
+                          <td key={idx} className="px-3 py-2 text-gray-900">{race["Race Category"]}</td>
+                        ))}
+                      </tr>
+                      
+                      {/* Placement */}
+                      <tr className="border-b">
+                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Placement</td>
+                        {riderRaces.map((race, idx) => {
+                          const placement = parseInt(race.Placement);
+                          const isPodium = placement <= 5;
+                          return (
+                            <td key={idx} className="px-3 py-2">
+                              <span className={`text-lg font-bold ${isPodium ? 'text-yellow-600' : 'text-gray-900'}`}>
+                                #{race.Placement}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      
+                      {/* Lap 1 */}
+                      <tr className="border-b bg-gray-50">
+                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Lap 1</td>
+                        {riderRaces.map((race, idx) => (
+                          <td key={idx} className="px-3 py-2 text-gray-900 font-mono">{race.LAP1 || '-'}</td>
+                        ))}
+                      </tr>
+                      
+                      {/* Lap 2 */}
+                      <tr className="border-b">
+                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Lap 2</td>
+                        {riderRaces.map((race, idx) => (
+                          <td key={idx} className="px-3 py-2 text-gray-900 font-mono">{race.LAP2 || '-'}</td>
+                        ))}
+                      </tr>
+                      
+                      {/* Lap 3 */}
+                      <tr className="border-b bg-gray-50">
+                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Lap 3</td>
+                        {riderRaces.map((race, idx) => (
+                          <td key={idx} className="px-3 py-2 text-gray-900 font-mono">{race.LAP3 || '-'}</td>
+                        ))}
+                      </tr>
+                      
+                      {/* Lap 4 */}
+                      <tr className="border-b">
+                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Lap 4</td>
+                        {riderRaces.map((race, idx) => (
+                          <td key={idx} className="px-3 py-2 text-gray-900 font-mono">{race.LAP4 || '-'}</td>
+                        ))}
+                      </tr>
+                      
+                      {/* Total Time */}
+                      <tr className="border-b bg-gray-50">
+                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Total Time</td>
+                        {riderRaces.map((race, idx) => (
+                          <td key={idx} className="px-3 py-2">
+                            <span className="text-base font-bold text-gray-900 font-mono">
+                              {formatTime(race.TotalSeconds)}
+                            </span>
+                          </td>
+                        ))}
+                      </tr>
+                      
+                      {/* Race Analysis */}
+                      <tr>
+                        <td className="px-3 py-3 font-semibold text-gray-700 align-top sticky left-0 bg-white">Race Analysis</td>
+                        {riderRaces.map((race, idx) => {
+                          const raceAnalysis = generateRaceAnalysis(race, idx, riderRaces);
+                          return (
+                            <td key={idx} className="px-3 py-3 text-xs bg-blue-50 align-top">
+                              <p className="text-gray-800 mb-2">{raceAnalysis.analysis}</p>
+                              <p className="text-gray-700">
+                                <span className="font-semibold text-blue-700">💡 {raceAnalysis.focus}</span>
+                              </p>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-white rounded-lg shadow-lg p-4 text-center text-gray-600">
+                <p className="text-xs md:text-sm">
+                  🚵 Utah HS MTB 2025 Region 5 Analytics • {riderWithTeam.length} riders • {raceData.length} race entries
+                </p>
+              </div>
+            </div>
+          );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
