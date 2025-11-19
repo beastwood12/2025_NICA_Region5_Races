@@ -1,92 +1,122 @@
-# Utah High School MTB Racing Analytics Dashboard
+# Utah HS MTB Racing Analytics Dashboard
 
-## 📊 Project Overview
-Interactive web dashboard for analyzing Utah High School Mountain Bike racing data from the 2025 Region 5 season.
+Interactive dashboard for analyzing 2025 Region 5 mountain bike racing results.
 
-**Features:**
-- **Team Comparison Page**: Compare team performance, gender balance, and program development
-- **Individual Racer Page**: Search racers, view detailed results, and track performance trends
-
-## 📁 Files Included
-- `index.html` - Main HTML file
-- `app.js` - React application code
-- `race_data.json` - Complete race data (3,916 entries from 4 races)
-- `README.md` - This file
-
-## 🚀 Deployment Instructions
+## 🚀 Quick Start
 
 ### Option 1: GitHub Pages (Recommended)
+
 1. Create a new GitHub repository
-2. Upload all files to the repository
+2. Upload these files to your repository:
+   - `index.html`
+   - `race_data.json`
 3. Go to Settings → Pages
-4. Select "main" branch as source
-5. Your site will be live at: `https://yourusername.github.io/repo-name`
+4. Set Source to "main" branch, "/" (root) folder
+5. Your dashboard will be live at: `https://yourusername.github.io/repo-name/`
 
 ### Option 2: Netlify
-1. Go to [netlify.com](https://www.netlify.com/)
-2. Drag and drop all files into Netlify
-3. Your site will be instantly deployed!
+
+1. Create a new Netlify site
+2. Drag and drop the folder containing:
+   - `index.html`
+   - `race_data.json`
+3. Your dashboard will be live instantly!
 
 ### Option 3: Local Testing
-1. Open `index.html` in a web browser
-2. If you see CORS errors, use a local server:
-   ```bash
-   python -m http.server 8000
-   ```
-3. Navigate to `http://localhost:8000`
 
-## 📈 Data Summary
-- **Total Race Entries**: 3,916
-- **Unique Riders**: 1,188
-- **Teams**: 22
-- **Races**:
-  - Race 1: Snowbasin (1,123 entries)
-  - Race 2: Manti (1,114 entries)
-  - Race 3: Beaver (1,059 entries)
-  - Race 4: Richfield (620 entries - HS only)
+1. Place `index.html` and `race_data.json` in the same folder
+2. Open `index.html` in a web browser
+3. **Note:** Some browsers may block local file loading. If you see "Failed to load data", use a local server:
 
-## 🏔️ Nebo Goats Composite Teams
-- Maple Mountain
-- Salem Hills
-- Payson
-- Spanish Fork
-- Springville
+```bash
+# Python 3
+python -m http.server 8000
 
-## 🎯 Key Metrics
-### Team Comparison
-- Total racers
-- Podium finishes (1st-5th place)
-- Top 25% finishers
-- Average gap to winner
-- Gender balance
-- Program development funnel
+# Or Python 2
+python -m SimpleHTTPServer 8000
 
-### Individual Racer
-- Race-by-race results
-- Percentile rankings
-- Performance trends
-- Podium and top 25% achievements
+# Or use Node.js http-server
+npx http-server
+```
 
-## 🛠️ Tech Stack
-- React 18
-- Recharts (for visualizations)
-- Tailwind CSS (for styling)
-- No build process required - runs directly in browser!
+Then visit `http://localhost:8000`
 
-## 📝 Notes
-- Jr Devo (7th/8th grade) riders only compete in Races 1-3
-- Race 4 (Richfield) is a Regional prep race for HS only
-- Podium = Top 5 finishers (medals awarded)
-- SLR = Single Lap Rider (beginner/casual HS category)
+## 📊 Features
 
-## 🔧 Customization
-To update data for new races:
-1. Replace `race_data.json` with updated data
-2. Ensure JSON format matches existing structure
-3. Data should include: Year, Region, Location, Race Category, Placement, Name, Team, Total Time, etc.
+- **Searchable Rider Selection** - Find riders by name or team
+- **Race-by-Race Comparison** - View all races side-by-side in a compact table
+- **Performance Metrics** - Track total races, best placement, and podium finishes
+- **Intelligent Race Analysis** - Get personalized coaching tips and encouragement
+- **Lap Time Tracking** - See all lap times and total race times
+- **Mobile Responsive** - Works great on all devices
 
-## 📧 Contact
-For questions or issues, reach out to your team coach!
+## 📁 File Structure
+
+```
+your-repo/
+├── index.html          # Main dashboard (single file, all code included)
+└── race_data.json      # Race results data
+```
+
+## 🔧 Data Format
+
+Your `race_data.json` should be an array of race entries with this structure:
+
+```json
+[
+  {
+    "Year": 2025,
+    "Region": 5,
+    "Location": "SNOWBASIN",
+    "Race Category": "Beginner Girls",
+    "Placement": "2",
+    "Plate#": 65021,
+    "Name": "RIDER NAME",
+    "Team": "Team Name",
+    "Points": null,
+    "LAP1": "41:22",
+    "LAP2": null,
+    "LAP3": null,
+    "LAP4": null,
+    "Penalty": null,
+    "Total Time": "41:22.50",
+    "Race": "Race 1 - Snowbasin",
+    "RaceNum": 1,
+    "TotalSeconds": 2482.5
+  }
+]
+```
+
+## 🎯 Usage
+
+1. Type a rider's name or team in the search box
+2. Click a rider to view their performance
+3. Scroll horizontally to compare races side-by-side
+4. Read the race analysis for coaching insights
+
+## 🛠 Updating Data
+
+To update with new race results:
+1. Replace `race_data.json` with your updated file
+2. Commit and push to GitHub (or re-upload to Netlify)
+3. Your dashboard updates automatically!
+
+## 💡 Tips
+
+- The dashboard loads all data client-side - no server required
+- Works offline once the page is loaded (with cached data)
+- Perfect for sharing with coaches, parents, and riders
+- Search is instant and filters by both name and team
+
+## 📱 Mobile Support
+
+The dashboard is fully responsive and works great on:
+- Desktop computers
+- Tablets
+- Mobile phones
+
+Horizontal scrolling is enabled for the race comparison table on smaller screens.
 
 ---
-**Built with ❤️ for Utah High School MTB Racing**
+
+Built with React and Tailwind CSS • No build process required • Deploy anywhere!
