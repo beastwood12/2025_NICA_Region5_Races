@@ -8,7 +8,7 @@ const App = () => {
 
   // Load race data on mount
   useEffect(() => {
-    fetch('race_data.json')
+    fetch('./race_data.json')
       .then(res => res.json())
       .then(data => {
         // Handle null values in JSON
