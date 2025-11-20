@@ -15,27 +15,59 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
+        // Category funnel ordering (beginner to advanced)
+        const CATEGORY_ORDER = [
+          'Beginner 7th Grade Boys',
+          'Beginner 8th Grade Boys',
+          'Beginner Girls',
+          'Intermediate 7th Grade Boys',
+          'Intermediate 8th Grade Boys',
+          'Intermediate Girls',
+          'Advanced Boys',
+          'Advanced Girls',
+          'SLR Boys',
+          'SLR Girls',
+          'Freshman C Boys',
+          'Freshman B Boys',
+          'Freshman A Boys',
+          'JV E Boys',
+          'JV D Boys',
+          'JV C Boys',
+          'JV B Boys',
+          'JV A Boys',
+          'Varsity Boys',
+          'Varsity Girls'
+        ];
+
+        // Nebo Goats composite team members
+        const NEBO_GOATS_TEAMS = ['Maple Mountain', 'Salem Hills', 'Payson', 'Spanish Fork', 'Springville'];
+
         const App = () => {
           const [raceData, setRaceData] = useState([]);
           const [loading, setLoading] = useState(true);
           const [error, setError] = useState(null);
+          const [activePage, setActivePage] = useState('teams'); // 'teams' or 'individuals'
+          
+          // Team page state
+          const [selectedRace, setSelectedRace] = useState('all');
+          const [selectedTeams, setSelectedTeams] = useState([]);
+          const [showNeboGoats, setShowNeboGoats] = useState(false);
+
+          // Individual page state
           const [selectedRider, setSelectedRider] = useState('');
           const [searchTerm, setSearchTerm] = useState('');
           const [showDropdown, setShowDropdown] = useState(false);
 
-          // Load race data from external JSON file
+          // Load race data
           useEffect(() => {
             fetch('race_data.json')
               .then(response => {
-                if (!response.ok) {
-                  throw new Error('Failed to load race data');
-                }
+                if (!response.ok) throw new Error('Failed to load race data');
                 return response.json();
               })
               .then(data => {
                 setRaceData(data);
                 setLoading(false);
-                // Set first rider as default
                 const firstRider = [...new Set(data.map(d => d.Name))].sort()[0];
                 setSelectedRider(firstRider);
               })
@@ -45,6 +77,429 @@
               });
           }, []);
 
+          // Get unique teams and races
+          const allTeams = raceData.length > 0 
+            ? [...new Set(raceData.map(d => d.Team))].sort()
+            : [];
+          
+          const allRaces = raceData.length > 0
+            ? [...new Set(raceData.map(d => d.Race))].sort((a, b) => {
+                const numA = parseInt(a.match(/\d+/));
+                const numB = parseInt(b.match(/\d+/));
+                return numA - numB;
+              })
+            : [];
+
+          // Calculate team metrics
+          const calculateTeamMetrics = (teamName, raceFilter) => {
+            const teamData = raceData.filter(d => 
+              d.Team === teamName && 
+              (raceFilter === 'all' || d.Race === raceFilter)
+            );
+
+            if (teamData.length === 0) return null;
+
+            // Total unique racers
+            const totalRacers = new Set(teamData.map(d => d.Name)).size;
+
+            // Podium finishes (1-5)
+            const podiumCount = teamData.filter(d => {
+              const placement = parseInt(d.Placement);
+              return placement >= 1 && placement <= 5;
+            }).length;
+
+            // Top 25% finishers
+            const categoryCounts = {};
+            raceData.forEach(d => {
+              if (raceFilter === 'all' || d.Race === raceFilter) {
+                const key = `${d.Race}-${d["Race Category"]}`;
+                categoryCounts[key] = (categoryCounts[key] || 0) + 1;
+              }
+            });
+
+            const top25Count = teamData.filter(d => {
+              const placement = parseInt(d.Placement);
+              const key = `${d.Race}-${d["Race Category"]}`;
+              const totalInCategory = categoryCounts[key] || 1;
+              const threshold = Math.ceil(totalInCategory * 0.25);
+              return placement <= threshold;
+            }).length;
+
+            // Average gap to winner
+            const gaps = [];
+            teamData.forEach(entry => {
+              const placement = parseInt(entry.Placement);
+              if (placement > 1 && entry.TotalSeconds) {
+                // Find winner in same category/race
+                const winner = raceData.find(d => 
+                  d.Race === entry.Race &&
+                  d["Race Category"] === entry["Race Category"] &&
+                  d.Placement === "1" &&
+                  d.TotalSeconds
+                );
+                if (winner && winner.TotalSeconds) {
+                  gaps.push(entry.TotalSeconds - winner.TotalSeconds);
+                }
+              }
+            });
+            const avgGap = gaps.length > 0 
+              ? gaps.reduce((a, b) => a + b, 0) / gaps.length 
+              : 0;
+
+            // Gender balance
+            const maleCount = teamData.filter(d => {
+              const cat = d["Race Category"];
+              return cat.includes('Boys') || cat.includes('Boy');
+            }).length;
+            const femaleCount = teamData.filter(d => {
+              const cat = d["Race Category"];
+              return cat.includes('Girls') || cat.includes('Girl');
+            }).length;
+
+            // Category distribution
+            const categoryDist = {};
+            teamData.forEach(d => {
+              const cat = d["Race Category"];
+              categoryDist[cat] = (categoryDist[cat] || 0) + 1;
+            });
+
+            return {
+              team: teamName,
+              totalRacers,
+              podiumCount,
+              top25Count,
+              avgGap: Math.round(avgGap),
+              maleCount,
+              femaleCount,
+              malePercent: totalRacers > 0 ? Math.round((maleCount / teamData.length) * 100) : 0,
+              femalePercent: totalRacers > 0 ? Math.round((femaleCount / teamData.length) * 100) : 0,
+              categoryDist
+            };
+          };
+
+          // Get teams to display
+          const teamsToShow = showNeboGoats 
+            ? NEBO_GOATS_TEAMS.filter(t => allTeams.includes(t))
+            : selectedTeams.length > 0 
+              ? selectedTeams 
+              : allTeams.slice(0, 5); // Show top 5 by default
+
+          const teamMetrics = teamsToShow
+            .map(t => calculateTeamMetrics(t, selectedRace))
+            .filter(m => m !== null)
+            .sort((a, b) => b.totalRacers - a.totalRacers);
+
+          // Format time helper
+          const formatTime = (seconds) => {
+            if (!seconds) return 'DNF';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+          };
+
+          // Loading/Error states
+          if (loading) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6 flex items-center justify-center">
+                <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-lg font-semibold text-gray-700">Loading race data...</p>
+                </div>
+              </div>
+            );
+          }
+
+          if (error) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6 flex items-center justify-center">
+                <div className="bg-white rounded-lg shadow-lg p-8 text-center max-w-md">
+                  <div className="text-red-600 text-5xl mb-4">⚠️</div>
+                  <h2 className="text-xl font-bold text-gray-900 mb-2">Failed to Load Data</h2>
+                  <p className="text-gray-600 mb-4">{error}</p>
+                  <p className="text-sm text-gray-500">Make sure race_data.json is in the same directory.</p>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4 md:p-6">
+              {/* Header */}
+              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+                  🚵 Utah HS MTB Racing Analytics
+                </h1>
+                <p className="text-gray-600 mt-1">2025 Region 5 Season • {raceData.length} entries</p>
+              </div>
+
+              {/* Tab Navigation */}
+              <div className="bg-white rounded-lg shadow-lg p-2 mb-4">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setActivePage('teams')}
+                    className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-all ${
+                      activePage === 'teams'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    📊 Team Comparison
+                  </button>
+                  <button
+                    onClick={() => setActivePage('individuals')}
+                    className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-all ${
+                      activePage === 'individuals'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    👤 Individual Racers
+                  </button>
+                </div>
+              </div>
+
+              {/* PAGE 1: TEAM COMPARISON */}
+              {activePage === 'teams' && (
+                <TeamComparisonPage
+                  allTeams={allTeams}
+                  allRaces={allRaces}
+                  selectedRace={selectedRace}
+                  setSelectedRace={setSelectedRace}
+                  selectedTeams={selectedTeams}
+                  setSelectedTeams={setSelectedTeams}
+                  showNeboGoats={showNeboGoats}
+                  setShowNeboGoats={setShowNeboGoats}
+                  teamMetrics={teamMetrics}
+                  raceData={raceData}
+                  formatTime={formatTime}
+                />
+              )}
+
+              {/* PAGE 2: INDIVIDUAL RACERS */}
+              {activePage === 'individuals' && (
+                <IndividualRacersPage
+                  raceData={raceData}
+                  selectedRider={selectedRider}
+                  setSelectedRider={setSelectedRider}
+                  searchTerm={searchTerm}
+                  setSearchTerm={setSearchTerm}
+                  showDropdown={showDropdown}
+                  setShowDropdown={setShowDropdown}
+                  formatTime={formatTime}
+                />
+              )}
+            </div>
+          );
+        };
+
+        // TEAM COMPARISON PAGE COMPONENT
+        const TeamComparisonPage = ({ 
+          allTeams, allRaces, selectedRace, setSelectedRace, 
+          selectedTeams, setSelectedTeams, showNeboGoats, setShowNeboGoats,
+          teamMetrics, raceData, formatTime 
+        }) => {
+          return (
+            <>
+              {/* Filters */}
+              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h2 className="text-lg md:text-xl font-bold mb-4">Filters</h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Race Filter */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Race</label>
+                    <select
+                      value={selectedRace}
+                      onChange={(e) => setSelectedRace(e.target.value)}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="all">All Races</option>
+                      {allRaces.map(race => (
+                        <option key={race} value={race}>{race}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Team Multi-Select */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Teams</label>
+                    <select
+                      multiple
+                      value={selectedTeams}
+                      onChange={(e) => {
+                        const values = Array.from(e.target.selectedOptions, option => option.value);
+                        setSelectedTeams(values);
+                        setShowNeboGoats(false);
+                      }}
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none h-24"
+                    >
+                      {allTeams.map(team => (
+                        <option key={team} value={team}>{team}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+                  </div>
+                </div>
+
+                {/* Nebo Goats Toggle */}
+                <div className="mt-4">
+                  <button
+                    onClick={() => {
+                      setShowNeboGoats(!showNeboGoats);
+                      setSelectedTeams([]);
+                    }}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                      showNeboGoats
+                        ? 'bg-orange-500 text-white shadow-md'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    🐐 {showNeboGoats ? 'Showing' : 'Show'} Nebo Goats Teams
+                  </button>
+                  {showNeboGoats && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      Maple Mountain • Salem Hills • Payson • Spanish Fork • Springville
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Core Metrics */}
+              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h2 className="text-lg md:text-xl font-bold mb-4">Core Performance Metrics</h2>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-gray-300">
+                        <th className="px-3 py-2 text-left font-bold">Team</th>
+                        <th className="px-3 py-2 text-center font-bold">Total Racers</th>
+                        <th className="px-3 py-2 text-center font-bold">Podium (1-5)</th>
+                        <th className="px-3 py-2 text-center font-bold">Top 25%</th>
+                        <th className="px-3 py-2 text-center font-bold">Avg Gap to Winner</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teamMetrics.map((team, idx) => {
+                        const isNeboGoat = NEBO_GOATS_TEAMS.includes(team.team);
+                        return (
+                          <tr key={idx} className={`border-b ${isNeboGoat ? 'bg-orange-50' : ''}`}>
+                            <td className="px-3 py-3 font-semibold">
+                              {team.team}
+                              {isNeboGoat && <span className="ml-2">🐐</span>}
+                            </td>
+                            <td className="px-3 py-3 text-center text-lg font-bold text-blue-600">
+                              {team.totalRacers}
+                            </td>
+                            <td className="px-3 py-3 text-center text-lg font-bold text-yellow-600">
+                              {team.podiumCount}
+                            </td>
+                            <td className="px-3 py-3 text-center text-lg font-bold text-green-600">
+                              {team.top25Count}
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono text-gray-700">
+                              {team.avgGap > 0 ? `+${formatTime(team.avgGap)}` : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Gender Balance */}
+              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h2 className="text-lg md:text-xl font-bold mb-4">Gender Balance</h2>
+                
+                <div className="space-y-4">
+                  {teamMetrics.map((team, idx) => {
+                    const isNeboGoat = NEBO_GOATS_TEAMS.includes(team.team);
+                    return (
+                      <div key={idx}>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-semibold text-gray-800">
+                            {team.team}
+                            {isNeboGoat && <span className="ml-2">🐐</span>}
+                          </span>
+                          <span className="text-sm text-gray-600">
+                            {team.maleCount + team.femaleCount} riders
+                          </span>
+                        </div>
+                        <div className="flex h-8 rounded-lg overflow-hidden border-2 border-gray-200">
+                          <div 
+                            className="bg-blue-500 flex items-center justify-center text-white text-xs font-bold"
+                            style={{ width: `${team.malePercent}%` }}
+                          >
+                            {team.malePercent > 15 && `${team.malePercent}% Male`}
+                          </div>
+                          <div 
+                            className="bg-pink-500 flex items-center justify-center text-white text-xs font-bold"
+                            style={{ width: `${team.femalePercent}%` }}
+                          >
+                            {team.femalePercent > 15 && `${team.femalePercent}% Female`}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Program Funnel */}
+              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
+                <h2 className="text-lg md:text-xl font-bold mb-4">Program Development Funnel</h2>
+                <p className="text-sm text-gray-600 mb-4">Rider distribution across categories (beginner → advanced)</p>
+                
+                <div className="space-y-3">
+                  {CATEGORY_ORDER.map(category => {
+                    const categoryData = teamMetrics.map(team => ({
+                      team: team.team,
+                      count: team.categoryDist[category] || 0,
+                      isNeboGoat: NEBO_GOATS_TEAMS.includes(team.team)
+                    }));
+                    
+                    const total = categoryData.reduce((sum, d) => sum + d.count, 0);
+                    
+                    if (total === 0) return null;
+                    
+                    return (
+                      <div key={category}>
+                        <div className="text-sm font-semibold text-gray-700 mb-1">{category}</div>
+                        <div className="flex h-8 rounded-lg overflow-hidden border-2 border-gray-200">
+                          {categoryData.map((data, idx) => {
+                            if (data.count === 0) return null;
+                            const percent = (data.count / total) * 100;
+                            const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-yellow-400', 'bg-red-400'];
+                            const bgColor = data.isNeboGoat ? 'bg-orange-400' : colors[idx % colors.length];
+                            
+                            return (
+                              <div
+                                key={data.team}
+                                className={`${bgColor} flex items-center justify-center text-white text-xs font-bold`}
+                                style={{ width: `${percent}%` }}
+                                title={`${data.team}: ${data.count} riders`}
+                              >
+                                {percent > 10 && `${data.count}`}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          );
+        };
+
+        // INDIVIDUAL RACERS PAGE COMPONENT
+        const IndividualRacersPage = ({
+          raceData, selectedRider, setSelectedRider,
+          searchTerm, setSearchTerm, showDropdown, setShowDropdown,
+          formatTime
+        }) => {
           // Get unique riders with their teams
           const riderWithTeam = raceData.length > 0 
             ? [...new Set(raceData.map(d => d.Name))].sort().map(name => {
@@ -76,15 +531,6 @@
             : 0;
           const podiumCount = riderRaces.filter(r => parseInt(r.Placement) <= 5).length;
 
-          // Format time helper
-          const formatTime = (seconds) => {
-            if (!seconds) return 'DNF';
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            const ms = Math.floor((seconds % 1) * 100);
-            return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
-          };
-
           // Helper to parse lap time strings to seconds
           const parseTimeToSeconds = (timeStr) => {
             if (!timeStr) return null;
@@ -95,27 +541,21 @@
             return null;
           };
 
-          // Generate race analysis with encouragement and actionable advice
+          // Generate race analysis
           const generateRaceAnalysis = (race, idx, allRaces) => {
             const placement = parseInt(race.Placement);
             const isPodium = placement <= 5;
-            
-            // Compare to previous race if available
             const prevRace = idx > 0 ? allRaces[idx - 1] : null;
             const placementChange = prevRace ? parseInt(prevRace.Placement) - placement : null;
-            
-            // Check if this is first race
             const isFirstRace = idx === 0;
             
-            // Calculate lap consistency for multi-lap races
-            const lap1Seconds = race.LAP1 ? parseTimeToSeconds(race.LAP1) : null;
-            const lap2Seconds = race.LAP2 ? parseTimeToSeconds(race.LAP2) : null;
+            const lap1Seconds = parseTimeToSeconds(race.LAP1);
+            const lap2Seconds = parseTimeToSeconds(race.LAP2);
             let lapDifference = null;
             if (lap1Seconds && lap2Seconds) {
               lapDifference = lap2Seconds - lap1Seconds;
             }
             
-            // Build encouraging analysis
             let analysis = '';
             let focus = '';
             
@@ -131,7 +571,6 @@
                 focus = `Focus on: Ride at a sustainable pace. Many riders go too hard early—consistent effort beats early burnout.`;
               }
             } else {
-              // Not first race - compare to previous
               if (placementChange > 0) {
                 analysis = `Excellent progress! You moved up ${placementChange} place${placementChange > 1 ? 's' : ''} from last race. Your hard work is paying off!`;
                 focus = `Focus on: Whatever you changed is working! Keep that training approach and look for small refinements.`;
@@ -144,7 +583,6 @@
               }
             }
             
-            // Add lap-specific coaching if multi-lap race
             if (lapDifference !== null) {
               if (lapDifference > 120) {
                 focus += ` Your second lap was ${Math.floor(lapDifference)}s slower—work on pacing strategy to maintain speed through the whole race.`;
@@ -156,53 +594,13 @@
             return { analysis, focus };
           };
 
-          // Loading state
-          if (loading) {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6 flex items-center justify-center">
-                <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-lg font-semibold text-gray-700">Loading race data...</p>
-                </div>
-              </div>
-            );
-          }
-
-          // Error state
-          if (error) {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6 flex items-center justify-center">
-                <div className="bg-white rounded-lg shadow-lg p-8 text-center max-w-md">
-                  <div className="text-red-600 text-5xl mb-4">⚠️</div>
-                  <h2 className="text-xl font-bold text-gray-900 mb-2">Failed to Load Data</h2>
-                  <p className="text-gray-600 mb-4">{error}</p>
-                  <p className="text-sm text-gray-500">Make sure race_data.json is in the same directory as this HTML file.</p>
-                </div>
-              </div>
-            );
-          }
-
           return (
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4 md:p-6">
-              {/* Success Banner */}
-              <div className="bg-green-500 text-white p-3 rounded-lg mb-4 text-center font-bold shadow-lg">
-                ✅ PRODUCTION VERSION - {raceData.length} entries | {riderWithTeam.length} riders
-              </div>
-
-              {/* Header */}
-              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-                  🚵 Utah HS MTB Racing Analytics
-                </h1>
-                <p className="text-gray-600 mt-1 md:mt-2">2025 Region 5 Season - Individual Racer Analysis</p>
-              </div>
-
-              {/* Rider Selection - Searchable Dropdown */}
+            <>
+              {/* Rider Selection */}
               <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
                 <h2 className="text-lg md:text-xl font-bold mb-3">Select a Rider</h2>
                 
                 <div className="relative">
-                  {/* Search Input */}
                   <div className="relative">
                     <input
                       type="text"
@@ -225,7 +623,6 @@
                     </svg>
                   </div>
 
-                  {/* Dropdown Results */}
                   {showDropdown && filteredRiders.length > 0 && (
                     <div className="absolute z-20 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                       {filteredRiders.map(rider => (
@@ -247,7 +644,6 @@
                     </div>
                   )}
 
-                  {/* No Results */}
                   {showDropdown && searchTerm && filteredRiders.length === 0 && (
                     <div className="absolute z-20 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-lg p-4 text-gray-500 text-center">
                       No riders found matching "{searchTerm}"
@@ -255,7 +651,6 @@
                   )}
                 </div>
 
-                {/* Currently Selected Rider Display */}
                 <div className="mt-4 p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
                   <div className="text-sm text-gray-600 mb-1">Currently viewing:</div>
                   <div className="font-bold text-lg text-gray-900">{selectedRider}</div>
@@ -264,7 +659,6 @@
                   </div>
                 </div>
 
-                {/* Click outside to close dropdown */}
                 {showDropdown && (
                   <div 
                     className="fixed inset-0 z-10" 
@@ -273,7 +667,7 @@
                 )}
               </div>
 
-              {/* Rider Profile Header */}
+              {/* Rider Profile */}
               <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
                 <h2 className="text-2xl md:text-3xl font-bold">{selectedRider}</h2>
                 <p className="text-lg md:text-xl mt-1 md:mt-2 opacity-90">{riderTeam}</p>
@@ -294,7 +688,7 @@
                 </div>
               </div>
 
-              {/* Race Results Comparison Table */}
+              {/* Race Comparison Table */}
               <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
                 <h3 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">Race-by-Race Performance</h3>
                 
@@ -317,7 +711,6 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {/* Category */}
                       <tr className="border-b bg-gray-50">
                         <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Category</td>
                         {riderRaces.map((race, idx) => (
@@ -325,7 +718,6 @@
                         ))}
                       </tr>
                       
-                      {/* Placement */}
                       <tr className="border-b">
                         <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Placement</td>
                         {riderRaces.map((race, idx) => {
@@ -341,7 +733,6 @@
                         })}
                       </tr>
                       
-                      {/* Lap 1 */}
                       <tr className="border-b bg-gray-50">
                         <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Lap 1</td>
                         {riderRaces.map((race, idx) => (
@@ -349,7 +740,6 @@
                         ))}
                       </tr>
                       
-                      {/* Lap 2 */}
                       <tr className="border-b">
                         <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Lap 2</td>
                         {riderRaces.map((race, idx) => (
@@ -357,7 +747,6 @@
                         ))}
                       </tr>
                       
-                      {/* Lap 3 */}
                       <tr className="border-b bg-gray-50">
                         <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Lap 3</td>
                         {riderRaces.map((race, idx) => (
@@ -365,7 +754,6 @@
                         ))}
                       </tr>
                       
-                      {/* Lap 4 */}
                       <tr className="border-b">
                         <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Lap 4</td>
                         {riderRaces.map((race, idx) => (
@@ -373,7 +761,6 @@
                         ))}
                       </tr>
                       
-                      {/* Total Time */}
                       <tr className="border-b bg-gray-50">
                         <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Total Time</td>
                         {riderRaces.map((race, idx) => (
@@ -385,7 +772,6 @@
                         ))}
                       </tr>
                       
-                      {/* Race Analysis */}
                       <tr>
                         <td className="px-3 py-3 font-semibold text-gray-700 align-top sticky left-0 bg-white">Race Analysis</td>
                         {riderRaces.map((race, idx) => {
@@ -404,14 +790,7 @@
                   </table>
                 </div>
               </div>
-
-              {/* Footer */}
-              <div className="bg-white rounded-lg shadow-lg p-4 text-center text-gray-600">
-                <p className="text-xs md:text-sm">
-                  🚵 Utah HS MTB 2025 Region 5 Analytics • {riderWithTeam.length} riders • {raceData.length} race entries
-                </p>
-              </div>
-            </div>
+            </>
           );
         };
 
