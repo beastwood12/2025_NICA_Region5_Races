@@ -50,6 +50,11 @@
       const [selectedTeams, setSelectedTeams] = useState([]);
       const [showOnlyNeboGoats, setShowOnlyNeboGoats] = useState(false);
       
+      // Team Category Analysis state
+      const [analysisTeam, setAnalysisTeam] = useState('');
+      const [analysisCategory, setAnalysisCategory] = useState('');
+      const [analysisRace, setAnalysisRace] = useState('all');
+      
       // Individual page state
       const [selectedRider, setSelectedRider] = useState('');
       const [searchTerm, setSearchTerm] = useState('');
@@ -86,6 +91,11 @@
           const numB = parseInt(b.match(/\d+/)[0]);
           return numA - numB;
         });
+      }, [raceData]);
+      
+      // Get all unique categories
+      const allCategories = useMemo(() => {
+        return [...new Set(raceData.map(d => d["Race Category"]))].sort();
       }, [raceData]);
 
       // Get unique riders with team info
@@ -313,6 +323,36 @@
         });
         return sorted;
       }, [filteredTeamMetrics, sortColumn, sortDirection]);
+      
+      // Category Analysis data
+      const categoryAnalysisData = useMemo(() => {
+        if (!analysisTeam || !analysisCategory) return [];
+        
+        // Filter by race if selected
+        let filteredData = raceData.filter(d => d["Race Category"] === analysisCategory);
+        if (analysisRace !== 'all') {
+          filteredData = filteredData.filter(d => d.Race === analysisRace);
+        }
+        
+        // Get top 5 finishers in the category
+        const top5 = filteredData
+          .sort((a, b) => parseInt(a.Placement) - parseInt(b.Placement))
+          .slice(0, 5);
+        
+        // Get all racers from selected team in this category
+        const teamRacers = filteredData.filter(d => d.Team === analysisTeam);
+        
+        // Combine and remove duplicates (in case team has someone in top 5)
+        const combined = [...top5];
+        teamRacers.forEach(racer => {
+          if (!combined.find(r => r.Name === racer.Name && r.Race === racer.Race)) {
+            combined.push(racer);
+          }
+        });
+        
+        // Sort by placement
+        return combined.sort((a, b) => parseInt(a.Placement) - parseInt(b.Placement));
+      }, [analysisTeam, analysisCategory, analysisRace, raceData]);
 
       const handleSort = (column) => {
         if (sortColumn === column) {
@@ -507,13 +547,13 @@
                           onClick={() => handleSort('top25Count')}
                           className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                         >
-                          Top 25% {sortColumn === 'top25Count' && (sortDirection === 'asc' ? '↑' : '↓')}
+                          Top 25% In Category {sortColumn === 'top25Count' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
                         <th 
                           onClick={() => handleSort('avgGap')}
                           className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                         >
-                          Avg Gap {sortColumn === 'avgGap' && (sortDirection === 'asc' ? '↑' : '↓')}
+                          Avg Gap To First In Category {sortColumn === 'avgGap' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </th>
                       </tr>
                     </thead>
@@ -659,6 +699,113 @@
                     <span className="w-3 h-3 bg-purple-600 rounded"></span> Varsity
                   </span>
                 </div>
+              </div>
+
+              {/* Team Category Analysis */}
+              <div className="bg-white rounded-lg shadow p-4 mt-4">
+                <h3 className="text-lg font-bold text-gray-800 mb-4">🔍 Team Category Analysis (Choose A Team)</h3>
+                
+                {/* Dropdowns */}
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Team</label>
+                    <select
+                      value={analysisTeam}
+                      onChange={(e) => setAnalysisTeam(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    >
+                      <option value="">-- Choose Team --</option>
+                      {allTeams.map(team => (
+                        <option key={team} value={team}>{team}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Select Category</label>
+                    <select
+                      value={analysisCategory}
+                      onChange={(e) => setAnalysisCategory(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    >
+                      <option value="">-- Choose Category --</option>
+                      {allCategories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Race Filter</label>
+                    <select
+                      value={analysisRace}
+                      onChange={(e) => setAnalysisRace(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    >
+                      <option value="all">All Races</option>
+                      {allRaces.map(race => (
+                        <option key={race} value={race}>{race}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Results Table */}
+                {analysisTeam && analysisCategory && categoryAnalysisData.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-orange-500 text-white">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-semibold">Placement</th>
+                          <th className="px-4 py-2 text-left text-xs font-semibold">Racer Name</th>
+                          <th className="px-4 py-2 text-left text-xs font-semibold">High School</th>
+                          {analysisRace === 'all' && <th className="px-4 py-2 text-left text-xs font-semibold">Race</th>}
+                          <th className="px-4 py-2 text-left text-xs font-semibold">Lap1</th>
+                          <th className="px-4 py-2 text-left text-xs font-semibold">Lap2</th>
+                          <th className="px-4 py-2 text-left text-xs font-semibold">Lap3</th>
+                          <th className="px-4 py-2 text-left text-xs font-semibold">Lap4</th>
+                          <th className="px-4 py-2 text-left text-xs font-semibold">Total Time</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {categoryAnalysisData.map((racer, idx) => {
+                          const isSelectedTeam = racer.Team === analysisTeam;
+                          const isTop5 = parseInt(racer.Placement) <= 5;
+                          
+                          return (
+                            <tr key={idx} className={isSelectedTeam ? 'bg-orange-50 font-semibold' : isTop5 ? 'bg-yellow-50' : 'hover:bg-gray-50'}>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">
+                                {racer.Placement === "1" ? '🥇' : racer.Placement === "2" ? '🥈' : racer.Placement === "3" ? '🥉' : racer.Placement === "4" ? '🏅' : racer.Placement === "5" ? '🏅' : ''} #{racer.Placement}
+                              </td>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">{racer.Name}</td>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">{racer.Team}</td>
+                              {analysisRace === 'all' && <td className="px-4 py-2 whitespace-nowrap text-sm">{racer.Race}</td>}
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">{racer.LAP1 || '-'}</td>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">{racer.LAP2 || '-'}</td>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">{racer.LAP3 || '-'}</td>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm">{racer.LAP4 || '-'}</td>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm font-semibold">
+                                {racer["Total Time"] || 'DNF'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                
+                {analysisTeam && analysisCategory && categoryAnalysisData.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    No data found for this team and category combination.
+                  </div>
+                )}
+                
+                {(!analysisTeam || !analysisCategory) && (
+                  <div className="text-center py-8 text-gray-500">
+                    Please select both a team and a category to view the analysis.
+                  </div>
+                )}
               </div>
             </div>
           )}
