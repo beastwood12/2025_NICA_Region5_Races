@@ -1,208 +1,676 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Utah HS MTB Racing Analytics - 2025 Region 5</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Utah HS MTB Racing Analytics - 2025 Region 5</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
-    <div id="root"></div>
-    
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+  <div id="root"></div>
 
-        const App = () => {
-          const [raceData, setRaceData] = useState([]);
-          const [loading, setLoading] = useState(true);
-          const [error, setError] = useState(null);
-          const [selectedRider, setSelectedRider] = useState('');
-          const [searchTerm, setSearchTerm] = useState('');
-          const [showDropdown, setShowDropdown] = useState(false);
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
 
-          // Load race data from external JSON file
-          useEffect(() => {
-            fetch('race_data.json')
-              .then(response => {
-                if (!response.ok) {
-                  throw new Error('Failed to load race data');
-                }
-                return response.json();
-              })
-              .then(data => {
-                setRaceData(data);
-                setLoading(false);
-                // Set first rider as default
-                const firstRider = [...new Set(data.map(d => d.Name))].sort()[0];
-                setSelectedRider(firstRider);
-              })
-              .catch(err => {
-                setError(err.message);
-                setLoading(false);
-              });
-          }, []);
+    const NEBO_GOATS_TEAMS = ['Maple Mountain', 'Salem Hills', 'Payson'];
 
-          // Get unique riders with their teams
-          const riderWithTeam = raceData.length > 0 
-            ? [...new Set(raceData.map(d => d.Name))].sort().map(name => {
-                const riderData = raceData.find(d => d.Name === name);
-                return {
-                  name: name,
-                  team: riderData?.Team || '',
-                  races: raceData.filter(d => d.Name === name).length
-                };
-              })
-            : [];
+    // Helper function to parse category level
+    const getCategoryLevel = (category) => {
+      const cat = category.toLowerCase();
+      if (cat.includes('beginner')) return 'Beginner';
+      if (cat.includes('intermediate')) return 'Intermediate';
+      if (cat.includes('advanced')) return 'Advanced';
+      if (cat.includes('slr')) return 'SLR';
+      if (cat.includes('freshman')) return 'Freshman';
+      if (cat.includes('jv')) return 'JV';
+      if (cat.includes('varsity')) return 'Varsity';
+      return 'Other';
+    };
 
-          // Filter riders based on search
-          const filteredRiders = riderWithTeam.filter(rider => 
-            rider.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            rider.team.toLowerCase().includes(searchTerm.toLowerCase())
-          );
+    // Helper function to get gender from category
+    const getGender = (category) => {
+      return category.includes('Girls') ? 'Female' : 'Male';
+    };
+
+    function App() {
+      const [raceData, setRaceData] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      
+      // Page navigation
+      const [activePage, setActivePage] = useState('individuals');
+      
+      // Team page state
+      const [raceFilter, setRaceFilter] = useState('all');
+      const [sortColumn, setSortColumn] = useState('totalRacers');
+      const [sortDirection, setSortDirection] = useState('desc');
+      const [selectedTeams, setSelectedTeams] = useState([]);
+      const [showOnlyNeboGoats, setShowOnlyNeboGoats] = useState(false);
+      
+      // Individual page state
+      const [selectedRider, setSelectedRider] = useState('');
+      const [searchTerm, setSearchTerm] = useState('');
+      const [showDropdown, setShowDropdown] = useState(false);
+
+      // Load race data
+      useEffect(() => {
+        fetch('race_data.json')
+          .then(response => {
+            if (!response.ok) throw new Error('Failed to load data');
+            return response.json();
+          })
+          .then(data => {
+            setRaceData(data);
+            // Set first rider as default
+            if (data.length > 0) {
+              const firstRider = [...new Set(data.map(d => d.Name))].sort()[0];
+              setSelectedRider(firstRider);
+            }
+            setLoading(false);
+          })
+          .catch(err => {
+            setError(err.message);
+            setLoading(false);
+          });
+      }, []);
+
+      // Get all unique teams and races
+      const allTeams = useMemo(() => [...new Set(raceData.map(d => d.Team))].sort(), [raceData]);
+      const allRaces = useMemo(() => {
+        const races = [...new Set(raceData.map(d => d.Race))];
+        return races.sort((a, b) => {
+          const numA = parseInt(a.match(/\d+/)[0]);
+          const numB = parseInt(b.match(/\d+/)[0]);
+          return numA - numB;
+        });
+      }, [raceData]);
+
+      // Get unique riders with team info
+      const riderWithTeam = useMemo(() => {
+        return [...new Set(raceData.map(d => d.Name))].sort().map(name => ({
+          name,
+          team: raceData.find(d => d.Name === name)?.Team || '',
+          races: raceData.filter(d => d.Name === name).length
+        }));
+      }, [raceData]);
+
+      // Filter riders based on search
+      const filteredRiders = riderWithTeam.filter(rider => 
+        rider.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        rider.team.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+
+      // Get selected rider data
+      const riderRaces = raceData.filter(d => d.Name === selectedRider).sort((a, b) => a.RaceNum - b.RaceNum);
+      const riderTeam = riderRaces[0]?.Team || '';
+      const totalRaces = riderRaces.length;
+      const bestPlacement = riderRaces.length > 0 ? Math.min(...riderRaces.map(r => parseInt(r.Placement))) : 0;
+      const podiumCount = riderRaces.filter(r => parseInt(r.Placement) <= 5).length;
+
+      // Format time helper
+      const formatTime = (seconds) => {
+        if (!seconds) return 'DNF';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        const ms = Math.floor((seconds % 1) * 100);
+        return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+      };
+
+      // Parse time helper
+      const parseTimeToSeconds = (timeStr) => {
+        if (!timeStr) return null;
+        const parts = timeStr.split(':');
+        if (parts.length === 2) {
+          return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+        }
+        return null;
+      };
+
+      // Generate race analysis
+      const generateRaceAnalysis = (race, idx, allRaces) => {
+        const placement = parseInt(race.Placement);
+        let analysis = '';
+        let focus = '';
+
+        if (placement === 1) {
+          analysis = `🥇 Victory! You dominated this race with a first-place finish.`;
+          focus = `Keep doing what you're doing—your training is paying off!`;
+        } else if (placement <= 5) {
+          analysis = `🏅 Podium finish! You earned ${placement === 2 ? '2nd' : placement === 3 ? '3rd' : placement + 'th'} place.`;
+          focus = `Great result! To reach the top step, focus on explosive power and race-start technique.`;
+        } else if (placement <= 10) {
+          analysis = `Solid top-10 finish in ${placement}${placement === 1 ? 'st' : placement === 2 ? 'nd' : placement === 3 ? 'rd' : 'th'} place.`;
+          focus = `You're close to podium! Work on sustained climbing power and technical descending.`;
+        } else {
+          analysis = `Finished in ${placement}${placement === 1 ? 'st' : placement === 2 ? 'nd' : placement === 3 ? 'rd' : 'th'} place.`;
+          focus = `Every race is progress. Focus on building endurance and maintaining consistent lap times.`;
+        }
+
+        if (idx > 0 && allRaces[idx - 1]) {
+          const prevPlacement = parseInt(allRaces[idx - 1].Placement);
+          const improvementOrDecline = prevPlacement - placement;
           
-          // Get data for selected rider
-          const riderRaces = raceData
-            .filter(d => d.Name === selectedRider)
-            .sort((a, b) => a.RaceNum - b.RaceNum);
-          const riderTeam = riderRaces[0]?.Team || '';
+          if (improvementOrDecline > 5) {
+            analysis += ` Huge improvement from last race (up ${improvementOrDecline} places)!`;
+          } else if (improvementOrDecline > 0) {
+            analysis += ` Nice progress from last race (up ${improvementOrDecline} ${improvementOrDecline === 1 ? 'place' : 'places'}).`;
+          } else if (improvementOrDecline < -5) {
+            analysis += ` Tougher race than last time (down ${Math.abs(improvementOrDecline)} places).`;
+            focus = `Don't get discouraged—analyze what went differently and adjust your approach.`;
+          }
+        }
+
+        const lap1 = parseTimeToSeconds(race.LAP1);
+        const lap2 = parseTimeToSeconds(race.LAP2);
+        let lapDifference = null;
+        
+        if (lap1 && lap2) {
+          lapDifference = lap2 - lap1;
+        }
+        
+        if (lapDifference !== null) {
+          if (lapDifference > 120) {
+            focus += ` Your second lap was ${Math.floor(lapDifference)}s slower—work on pacing strategy to maintain speed through the whole race.`;
+          } else if (lapDifference < 30) {
+            focus += ` Great lap consistency! Your even pacing is a strength to maintain.`;
+          }
+        }
+        
+        return { analysis, focus };
+      };
+
+      // Calculate team metrics
+      const calculateTeamMetrics = (teamName) => {
+        let teamData = raceData.filter(d => d.Team === teamName);
+        
+        if (raceFilter !== 'all') {
+          teamData = teamData.filter(d => d.Race === raceFilter);
+        }
+
+        const uniqueRiders = new Set(teamData.map(d => d.Name)).size;
+        const podiumFinishes = teamData.filter(d => parseInt(d.Placement) >= 1 && parseInt(d.Placement) <= 5).length;
+        
+        // Calculate top 25% finishers
+        let top25Count = 0;
+        const categoryCounts = {};
+        
+        teamData.forEach(entry => {
+          const category = entry["Race Category"];
+          const race = entry.Race;
+          const key = `${race}-${category}`;
           
-          // Calculate stats
-          const totalRaces = riderRaces.length;
-          const bestPlacement = riderRaces.length > 0 
-            ? Math.min(...riderRaces.map(r => parseInt(r.Placement))) 
-            : 0;
-          const podiumCount = riderRaces.filter(r => parseInt(r.Placement) <= 5).length;
+          if (!categoryCounts[key]) {
+            const categoryData = raceData.filter(d => d.Race === race && d["Race Category"] === category);
+            categoryCounts[key] = categoryData.length;
+          }
+          
+          const threshold = Math.ceil(categoryCounts[key] * 0.25);
+          if (parseInt(entry.Placement) <= threshold) {
+            top25Count++;
+          }
+        });
 
-          // Format time helper
-          const formatTime = (seconds) => {
-            if (!seconds) return 'DNF';
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            const ms = Math.floor((seconds % 1) * 100);
-            return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
-          };
+        // Calculate average gap to winner
+        let totalGap = 0;
+        let gapCount = 0;
+        
+        teamData.forEach(entry => {
+          if (entry.TotalSeconds && parseInt(entry.Placement) > 1) {
+            const winnerData = raceData.find(d => 
+              d.Race === entry.Race && 
+              d["Race Category"] === entry["Race Category"] && 
+              d.Placement === "1"
+            );
+            
+            if (winnerData && winnerData.TotalSeconds) {
+              const gap = entry.TotalSeconds - winnerData.TotalSeconds;
+              totalGap += gap;
+              gapCount++;
+            }
+          }
+        });
+        
+        const avgGap = gapCount > 0 ? totalGap / gapCount : 0;
 
-          // Helper to parse lap time strings to seconds
-          const parseTimeToSeconds = (timeStr) => {
-            if (!timeStr) return null;
-            const parts = timeStr.split(':');
-            if (parts.length === 2) {
-              return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
-            }
-            return null;
-          };
+        // Calculate gender distribution
+        const uniqueRidersByGender = {};
+        teamData.forEach(entry => {
+          const gender = getGender(entry["Race Category"]);
+          if (!uniqueRidersByGender[gender]) {
+            uniqueRidersByGender[gender] = new Set();
+          }
+          uniqueRidersByGender[gender].add(entry.Name);
+        });
 
-          // Generate race analysis with encouragement and actionable advice
-          const generateRaceAnalysis = (race, idx, allRaces) => {
-            const placement = parseInt(race.Placement);
-            const isPodium = placement <= 5;
-            
-            // Compare to previous race if available
-            const prevRace = idx > 0 ? allRaces[idx - 1] : null;
-            const placementChange = prevRace ? parseInt(prevRace.Placement) - placement : null;
-            
-            // Check if this is first race
-            const isFirstRace = idx === 0;
-            
-            // Calculate lap consistency for multi-lap races
-            const lap1Seconds = race.LAP1 ? parseTimeToSeconds(race.LAP1) : null;
-            const lap2Seconds = race.LAP2 ? parseTimeToSeconds(race.LAP2) : null;
-            let lapDifference = null;
-            if (lap1Seconds && lap2Seconds) {
-              lapDifference = lap2Seconds - lap1Seconds;
-            }
-            
-            // Build encouraging analysis
-            let analysis = '';
-            let focus = '';
-            
-            if (isFirstRace) {
-              if (isPodium) {
-                analysis = `Fantastic start to the season with a top 5 finish! You're showing great potential right out of the gate.`;
-                focus = `Focus on: Maintaining this momentum. Keep your training consistent and work on race-day nutrition to sustain energy.`;
-              } else if (placement <= 10) {
-                analysis = `Great first race of the year! Breaking into the top 10 is a solid foundation to build on.`;
-                focus = `Focus on: Study the riders ahead of you. What lines are they taking? Where are they gaining time?`;
-              } else {
-                analysis = `First race of the year! Everyone starts somewhere, and you're building valuable experience.`;
-                focus = `Focus on: Ride at a sustainable pace. Many riders go too hard early—consistent effort beats early burnout.`;
-              }
-            } else {
-              // Not first race - compare to previous
-              if (placementChange > 0) {
-                analysis = `Excellent progress! You moved up ${placementChange} place${placementChange > 1 ? 's' : ''} from last race. Your hard work is paying off!`;
-                focus = `Focus on: Whatever you changed is working! Keep that training approach and look for small refinements.`;
-              } else if (placementChange < 0) {
-                analysis = `You dropped ${Math.abs(placementChange)} place${Math.abs(placementChange) > 1 ? 's' : ''} this race, but remember—different courses favor different strengths and competition varies.`;
-                focus = `Focus on: Review what felt different. Was it pacing, nutrition, or just a tougher field? Adjust and come back stronger.`;
-              } else {
-                analysis = `Consistent performance! Maintaining your placement shows you're holding your fitness level against the competition.`;
-                focus = `Focus on: To level up, add one intensity session per week—intervals or hill repeats can break through plateaus.`;
-              }
-            }
-            
-            // Add lap-specific coaching if multi-lap race
-            if (lapDifference !== null) {
-              if (lapDifference > 120) {
-                focus += ` Your second lap was ${Math.floor(lapDifference)}s slower—work on pacing strategy to maintain speed through the whole race.`;
-              } else if (lapDifference < 30) {
-                focus += ` Great lap consistency! Your even pacing is a strength to maintain.`;
-              }
-            }
-            
-            return { analysis, focus };
-          };
+        const maleCount = uniqueRidersByGender['Male']?.size || 0;
+        const femaleCount = uniqueRidersByGender['Female']?.size || 0;
+        const totalGenderCount = maleCount + femaleCount;
 
-          // Loading state
-          if (loading) {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6 flex items-center justify-center">
-                <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-lg font-semibold text-gray-700">Loading race data...</p>
+        // Calculate category distribution
+        const categoryDist = {};
+        teamData.forEach(entry => {
+          const level = getCategoryLevel(entry["Race Category"]);
+          if (!categoryDist[level]) {
+            categoryDist[level] = new Set();
+          }
+          categoryDist[level].add(entry.Name);
+        });
+
+        const categoryDistribution = {};
+        Object.keys(categoryDist).forEach(level => {
+          categoryDistribution[level] = categoryDist[level].size;
+        });
+
+        return {
+          teamName,
+          totalRacers: uniqueRiders,
+          podiumFinishes,
+          top25Count,
+          avgGap: Math.round(avgGap),
+          maleCount,
+          femaleCount,
+          malePercent: totalGenderCount > 0 ? Math.round((maleCount / totalGenderCount) * 100) : 0,
+          femalePercent: totalGenderCount > 0 ? Math.round((femaleCount / totalGenderCount) * 100) : 0,
+          categoryDistribution
+        };
+      };
+
+      // Calculate metrics for all teams
+      const teamMetrics = useMemo(() => {
+        return allTeams.map(team => calculateTeamMetrics(team));
+      }, [allTeams, raceFilter, raceData]);
+
+      // Apply team filters
+      const filteredTeamMetrics = useMemo(() => {
+        let filtered = teamMetrics;
+        
+        if (showOnlyNeboGoats) {
+          filtered = filtered.filter(t => NEBO_GOATS_TEAMS.includes(t.teamName));
+        }
+        
+        if (selectedTeams.length > 0) {
+          filtered = filtered.filter(t => selectedTeams.includes(t.teamName));
+        }
+        
+        return filtered;
+      }, [teamMetrics, showOnlyNeboGoats, selectedTeams]);
+
+      // Sort team metrics
+      const sortedTeamMetrics = useMemo(() => {
+        const sorted = [...filteredTeamMetrics];
+        sorted.sort((a, b) => {
+          let valA = a[sortColumn];
+          let valB = b[sortColumn];
+          
+          if (sortColumn === 'teamName') {
+            return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+          }
+          
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+        });
+        return sorted;
+      }, [filteredTeamMetrics, sortColumn, sortDirection]);
+
+      const handleSort = (column) => {
+        if (sortColumn === column) {
+          setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+          setSortColumn(column);
+          setSortDirection('desc');
+        }
+      };
+
+      const handleTeamSelect = (e) => {
+        const options = e.target.options;
+        const selected = [];
+        for (let i = 0; i < options.length; i++) {
+          if (options[i].selected) {
+            selected.push(options[i].value);
+          }
+        }
+        setSelectedTeams(selected);
+      };
+
+      if (loading) {
+        return (
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-800 mb-2">Loading race data...</div>
+              <div className="text-gray-600">Please wait</div>
+            </div>
+          </div>
+        );
+      }
+
+      if (error) {
+        return (
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-600 mb-2">Error Loading Data</div>
+              <div className="text-gray-600">{error}</div>
+              <div className="text-sm text-gray-500 mt-4">Make sure race_data.json is in the same directory</div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg">
+            <div className="max-w-7xl mx-auto px-4 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold">Utah HS MTB Analytics</h1>
+                  <p className="text-sm text-orange-100">Region 5 • 2025 Season</p>
+                </div>
+                <img src="nebo_goats_logo_transparent.png" alt="Nebo Goats" className="h-16 w-16" />
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Tabs */}
+          <div className="bg-white shadow">
+            <div className="max-w-7xl mx-auto px-4 py-4">
+              <div className="flex justify-center gap-4">
+                <button
+                  onClick={() => setActivePage('teams')}
+                  className={`px-8 py-3 rounded-lg text-base font-semibold transition ${
+                    activePage === 'teams' 
+                      ? 'bg-orange-500 text-white shadow-md' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Teams
+                </button>
+                <button
+                  onClick={() => setActivePage('individuals')}
+                  className={`px-8 py-3 rounded-lg text-base font-semibold transition ${
+                    activePage === 'individuals' 
+                      ? 'bg-orange-500 text-white shadow-md' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Individuals
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Teams Page */}
+          {activePage === 'teams' && (
+            <div className="max-w-7xl mx-auto p-4">
+              {/* Filters - Single Row Layout */}
+              <div className="bg-white rounded-lg shadow p-3 mb-4">
+                <div className="grid grid-cols-3 gap-4 items-start">
+                  {/* Team Multi-Select */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-sm font-medium text-gray-700">
+                        Select Teams {selectedTeams.length > 0 && `(${selectedTeams.length})`}
+                      </label>
+                      {selectedTeams.length > 0 && (
+                        <button
+                          onClick={() => setSelectedTeams([])}
+                          className="text-xs text-orange-600 hover:text-orange-700 font-medium"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <select
+                      multiple
+                      value={selectedTeams}
+                      onChange={handleTeamSelect}
+                      disabled={showOnlyNeboGoats}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100 disabled:text-gray-400"
+                      style={{ height: '80px' }}
+                    >
+                      {allTeams.map(team => (
+                        <option key={team} value={team} className="py-1">
+                          {team} {NEBO_GOATS_TEAMS.includes(team) ? '🐐' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd for multiple</p>
+                  </div>
+
+                  {/* Race Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Race Filter</label>
+                    <select
+                      value={raceFilter}
+                      onChange={(e) => setRaceFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    >
+                      <option value="all">All Races</option>
+                      {allRaces.map(race => (
+                        <option key={race} value={race}>{race}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Nebo Goats Toggle Switch */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Show Nebo Goats Only</label>
+                    <button
+                      onClick={() => {
+                        setShowOnlyNeboGoats(!showOnlyNeboGoats);
+                        if (!showOnlyNeboGoats) setSelectedTeams([]);
+                      }}
+                      className={`relative inline-flex h-10 w-20 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
+                        showOnlyNeboGoats ? 'bg-orange-500' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-8 w-8 transform rounded-full bg-white shadow-lg transition-transform ${
+                          showOnlyNeboGoats ? 'translate-x-11' : 'translate-x-1'
+                        }`}
+                      >
+                        <span className="flex items-center justify-center h-full text-lg">
+                          {showOnlyNeboGoats ? '🐐' : ''}
+                        </span>
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
-            );
-          }
 
-          // Error state
-          if (error) {
-            return (
-              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6 flex items-center justify-center">
-                <div className="bg-white rounded-lg shadow-lg p-8 text-center max-w-md">
-                  <div className="text-red-600 text-5xl mb-4">⚠️</div>
-                  <h2 className="text-xl font-bold text-gray-900 mb-2">Failed to Load Data</h2>
-                  <p className="text-gray-600 mb-4">{error}</p>
-                  <p className="text-sm text-gray-500">Make sure race_data.json is in the same directory as this HTML file.</p>
+              {/* Metrics Table */}
+              <div className="bg-white rounded-lg shadow overflow-hidden mb-4">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th 
+                          onClick={() => handleSort('teamName')}
+                          className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                        >
+                          Team {sortColumn === 'teamName' && (sortDirection === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('totalRacers')}
+                          className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                        >
+                          Racers {sortColumn === 'totalRacers' && (sortDirection === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('podiumFinishes')}
+                          className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                        >
+                          Podiums {sortColumn === 'podiumFinishes' && (sortDirection === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('top25Count')}
+                          className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                        >
+                          Top 25% {sortColumn === 'top25Count' && (sortDirection === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('avgGap')}
+                          className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                        >
+                          Avg Gap {sortColumn === 'avgGap' && (sortDirection === 'asc' ? '↑' : '↓')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {sortedTeamMetrics.map((team, idx) => {
+                        const isNebo = NEBO_GOATS_TEAMS.includes(team.teamName);
+                        return (
+                          <tr key={idx} className={isNebo ? 'bg-orange-50' : 'hover:bg-gray-50'}>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">
+                                {team.teamName} {isNebo && '🐐'}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                              {team.totalRacers}
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-yellow-600 font-semibold">
+                              {team.podiumFinishes}
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-blue-600 font-semibold">
+                              {team.top25Count}
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                              {team.avgGap > 0 ? `${team.avgGap}s` : 'N/A'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            );
-          }
 
-          return (
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4 md:p-6">
-              {/* Success Banner */}
-              <div className="bg-green-500 text-white p-3 rounded-lg mb-4 text-center font-bold shadow-lg">
-                ✅ PRODUCTION VERSION - {raceData.length} entries | {riderWithTeam.length} riders
+              {/* Gender Balance Chart */}
+              <div className="bg-white rounded-lg shadow p-4 mb-4">
+                <h3 className="text-sm font-bold text-gray-800 mb-3">👥 Gender Balance</h3>
+                <div className="space-y-2">
+                  {sortedTeamMetrics.map((team, idx) => {
+                    const isNebo = NEBO_GOATS_TEAMS.includes(team.teamName);
+                    const total = team.maleCount + team.femaleCount;
+                    if (total === 0) return null;
+                    
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className={`w-32 text-xs font-medium ${isNebo ? 'text-orange-600' : 'text-gray-700'}`}>
+                          {team.teamName}
+                        </div>
+                        <div className="flex-1 h-6 flex rounded overflow-hidden border border-gray-200">
+                          <div 
+                            className="bg-blue-500 flex items-center justify-center text-white text-xs font-medium"
+                            style={{ width: `${team.malePercent}%` }}
+                            title={`${team.maleCount} boys`}
+                          >
+                            {team.malePercent > 15 && `${team.malePercent}%`}
+                          </div>
+                          <div 
+                            className="bg-pink-500 flex items-center justify-center text-white text-xs font-medium"
+                            style={{ width: `${team.femalePercent}%` }}
+                            title={`${team.femaleCount} girls`}
+                          >
+                            {team.femalePercent > 15 && `${team.femalePercent}%`}
+                          </div>
+                        </div>
+                        <div className="w-32 text-xs text-gray-600">
+                          {team.maleCount}M / {team.femaleCount}F
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Header */}
-              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-                  🚵 Utah HS MTB Racing Analytics
-                </h1>
-                <p className="text-gray-600 mt-1 md:mt-2">2025 Region 5 Season - Individual Racer Analysis</p>
-              </div>
+              {/* Program Funnel */}
+              <div className="bg-white rounded-lg shadow p-4">
+                <h3 className="text-sm font-bold text-gray-800 mb-3">🎯 Program Development Funnel</h3>
+                <div className="space-y-2">
+                  {sortedTeamMetrics.map((team, idx) => {
+                    const isNebo = NEBO_GOATS_TEAMS.includes(team.teamName);
+                    const dist = team.categoryDistribution;
+                    const total = Object.values(dist).reduce((sum, val) => sum + val, 0);
+                    if (total === 0) return null;
 
+                    const categories = ['Beginner', 'Intermediate', 'Advanced', 'SLR', 'Freshman', 'JV', 'Varsity'];
+                    const colors = {
+                      'Beginner': 'bg-green-300',
+                      'Intermediate': 'bg-green-400',
+                      'Advanced': 'bg-green-500',
+                      'SLR': 'bg-yellow-300',
+                      'Freshman': 'bg-blue-300',
+                      'JV': 'bg-blue-500',
+                      'Varsity': 'bg-purple-600'
+                    };
+
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className={`w-32 text-xs font-medium ${isNebo ? 'text-orange-600' : 'text-gray-700'}`}>
+                          {team.teamName}
+                        </div>
+                        <div className="flex-1 h-6 flex rounded overflow-hidden border border-gray-200">
+                          {categories.map(cat => {
+                            const count = dist[cat] || 0;
+                            if (count === 0) return null;
+                            const percent = (count / total) * 100;
+                            return (
+                              <div
+                                key={cat}
+                                className={`${colors[cat]} flex items-center justify-center text-white text-xs font-medium`}
+                                style={{ width: `${percent}%` }}
+                                title={`${cat}: ${count} riders`}
+                              >
+                                {percent > 8 && count}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="w-32 text-xs text-gray-600">
+                          {total} riders
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-2 text-xs">
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 bg-green-300 rounded"></span> Beginner
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 bg-green-400 rounded"></span> Intermediate
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 bg-green-500 rounded"></span> Advanced
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 bg-yellow-300 rounded"></span> SLR
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 bg-blue-300 rounded"></span> Freshman
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 bg-blue-500 rounded"></span> JV
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 bg-purple-600 rounded"></span> Varsity
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Individual Racers Page */}
+          {activePage === 'individuals' && (
+            <div className="max-w-7xl mx-auto p-4">
               {/* Rider Selection - Searchable Dropdown */}
-              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
-                <h2 className="text-lg md:text-xl font-bold mb-3">Select a Rider</h2>
+              <div className="bg-white rounded-lg shadow p-4 mb-4">
+                <h2 className="text-lg font-bold mb-3 text-gray-800">Select a Rider</h2>
                 
                 <div className="relative">
-                  {/* Search Input */}
                   <div className="relative">
                     <input
                       type="text"
@@ -213,7 +681,7 @@
                         setShowDropdown(true);
                       }}
                       onFocus={() => setShowDropdown(true)}
-                      className="w-full px-4 py-3 pr-10 text-base border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                      className="w-full px-4 py-3 pr-10 text-base border-2 border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
                     />
                     <svg 
                       className="absolute right-3 top-3.5 w-5 h-5 text-gray-400"
@@ -225,7 +693,6 @@
                     </svg>
                   </div>
 
-                  {/* Dropdown Results */}
                   {showDropdown && filteredRiders.length > 0 && (
                     <div className="absolute z-20 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                       {filteredRiders.map(rider => (
@@ -236,187 +703,133 @@
                             setSearchTerm('');
                             setShowDropdown(false);
                           }}
-                          className={`w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0 ${
-                            selectedRider === rider.name ? 'bg-blue-100' : ''
-                          }`}
+                          className="w-full px-4 py-3 text-left hover:bg-orange-50 border-b border-gray-100 last:border-0 transition-colors"
                         >
                           <div className="font-semibold text-gray-900">{rider.name}</div>
-                          <div className="text-sm text-gray-600">{rider.team} • {rider.races} races</div>
+                          <div className="text-sm text-gray-600">
+                            {rider.team} • {rider.races} {rider.races === 1 ? 'race' : 'races'}
+                          </div>
                         </button>
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
 
-                  {/* No Results */}
-                  {showDropdown && searchTerm && filteredRiders.length === 0 && (
-                    <div className="absolute z-20 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-lg p-4 text-gray-500 text-center">
-                      No riders found matching "{searchTerm}"
+              {/* Rider Stats Summary */}
+              {selectedRider && (
+                <>
+                  <div className="bg-white rounded-lg shadow p-4 mb-4">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-900">{selectedRider}</h2>
+                        <p className="text-gray-600 mt-1">{riderTeam}</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-600">2025 Season</div>
+                        <div className="text-lg font-semibold text-orange-600">{totalRaces} Races</div>
+                      </div>
                     </div>
-                  )}
-                </div>
 
-                {/* Currently Selected Rider Display */}
-                <div className="mt-4 p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
-                  <div className="text-sm text-gray-600 mb-1">Currently viewing:</div>
-                  <div className="font-bold text-lg text-gray-900">{selectedRider}</div>
-                  <div className="text-sm text-gray-600">
-                    {riderWithTeam.find(r => r.name === selectedRider)?.team} • {riderWithTeam.find(r => r.name === selectedRider)?.races} races
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-3 rounded-lg">
+                        <div className="text-sm text-gray-600 mb-1">Best Placement</div>
+                        <div className="text-2xl font-bold text-blue-700">
+                          {bestPlacement === 1 ? '🥇 1st' : bestPlacement === 2 ? '🥈 2nd' : bestPlacement === 3 ? '🥉 3rd' : `#${bestPlacement}`}
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 p-3 rounded-lg">
+                        <div className="text-sm text-gray-600 mb-1">Podium Finishes</div>
+                        <div className="text-2xl font-bold text-yellow-700">🏅 {podiumCount}</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 p-3 rounded-lg">
+                        <div className="text-sm text-gray-600 mb-1">Total Races</div>
+                        <div className="text-2xl font-bold text-green-700">{totalRaces}</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                {/* Click outside to close dropdown */}
-                {showDropdown && (
-                  <div 
-                    className="fixed inset-0 z-10" 
-                    onClick={() => setShowDropdown(false)}
-                  />
-                )}
-              </div>
-
-              {/* Rider Profile Header */}
-              <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
-                <h2 className="text-2xl md:text-3xl font-bold">{selectedRider}</h2>
-                <p className="text-lg md:text-xl mt-1 md:mt-2 opacity-90">{riderTeam}</p>
-                
-                <div className="grid grid-cols-3 gap-3 md:gap-4 mt-4">
-                  <div className="bg-white/20 backdrop-blur-sm px-3 md:px-6 py-2 md:py-3 rounded-lg">
-                    <div className="text-xs md:text-sm opacity-90">Total Races</div>
-                    <div className="text-xl md:text-3xl font-bold">{totalRaces}</div>
+                  {/* Race Results Table */}
+                  <div className="bg-white rounded-lg shadow overflow-hidden mb-4">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full">
+                        <thead className="bg-orange-500 text-white">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Race</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Category</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Place</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Lap 1</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Lap 2</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Lap 3</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Lap 4</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {riderRaces.map((race, idx) => {
+                            const placement = parseInt(race.Placement);
+                            const isPodium = placement <= 5;
+                            
+                            return (
+                              <tr key={idx} className={isPodium ? 'bg-yellow-50' : 'hover:bg-gray-50'}>
+                                <td className="px-4 py-3 text-sm font-medium text-gray-900">{race.Race}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{race["Race Category"]}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
+                                    placement === 1 ? 'bg-yellow-200 text-yellow-800' :
+                                    placement <= 3 ? 'bg-orange-200 text-orange-800' :
+                                    placement <= 5 ? 'bg-blue-200 text-blue-800' :
+                                    'bg-gray-200 text-gray-800'
+                                  }`}>
+                                    {placement === 1 ? '🥇' : placement === 2 ? '🥈' : placement === 3 ? '🥉' : ''} #{placement}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{race.LAP1 || '-'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{race.LAP2 || '-'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{race.LAP3 || '-'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{race.LAP4 || '-'}</td>
+                                <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                                  {formatTime(race.TotalSeconds)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                  <div className="bg-white/20 backdrop-blur-sm px-3 md:px-6 py-2 md:py-3 rounded-lg">
-                    <div className="text-xs md:text-sm opacity-90">Best Placement</div>
-                    <div className="text-xl md:text-3xl font-bold">#{bestPlacement}</div>
-                  </div>
-                  <div className="bg-white/20 backdrop-blur-sm px-3 md:px-6 py-2 md:py-3 rounded-lg">
-                    <div className="text-xs md:text-sm opacity-90">Podium Finishes</div>
-                    <div className="text-xl md:text-3xl font-bold">{podiumCount}</div>
-                  </div>
-                </div>
-              </div>
 
-              {/* Race Results Comparison Table */}
-              <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-4">
-                <h3 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">Race-by-Race Performance</h3>
-                
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="border-b-2 border-gray-300">
-                        <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-gray-50 sticky left-0 z-10"></th>
-                        {riderRaces.map((race, idx) => {
-                          const isPodium = parseInt(race.Placement) <= 5;
-                          return (
-                            <th key={idx} className={`px-3 py-2 text-left font-bold text-gray-900 min-w-[180px] ${isPodium ? 'bg-yellow-50' : ''}`}>
-                              <div className="flex items-center gap-2">
-                                {race.Race}
-                                {isPodium && <span className="text-yellow-600">🏆</span>}
-                              </div>
-                            </th>
-                          );
-                        })}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Category */}
-                      <tr className="border-b bg-gray-50">
-                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Category</td>
-                        {riderRaces.map((race, idx) => (
-                          <td key={idx} className="px-3 py-2 text-gray-900">{race["Race Category"]}</td>
-                        ))}
-                      </tr>
+                  {/* Race Analysis */}
+                  <div className="space-y-3">
+                    {riderRaces.map((race, idx) => {
+                      const { analysis, focus } = generateRaceAnalysis(race, idx, riderRaces);
                       
-                      {/* Placement */}
-                      <tr className="border-b">
-                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Placement</td>
-                        {riderRaces.map((race, idx) => {
-                          const placement = parseInt(race.Placement);
-                          const isPodium = placement <= 5;
-                          return (
-                            <td key={idx} className="px-3 py-2">
-                              <span className={`text-lg font-bold ${isPodium ? 'text-yellow-600' : 'text-gray-900'}`}>
-                                #{race.Placement}
-                              </span>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      
-                      {/* Lap 1 */}
-                      <tr className="border-b bg-gray-50">
-                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Lap 1</td>
-                        {riderRaces.map((race, idx) => (
-                          <td key={idx} className="px-3 py-2 text-gray-900 font-mono">{race.LAP1 || '-'}</td>
-                        ))}
-                      </tr>
-                      
-                      {/* Lap 2 */}
-                      <tr className="border-b">
-                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Lap 2</td>
-                        {riderRaces.map((race, idx) => (
-                          <td key={idx} className="px-3 py-2 text-gray-900 font-mono">{race.LAP2 || '-'}</td>
-                        ))}
-                      </tr>
-                      
-                      {/* Lap 3 */}
-                      <tr className="border-b bg-gray-50">
-                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Lap 3</td>
-                        {riderRaces.map((race, idx) => (
-                          <td key={idx} className="px-3 py-2 text-gray-900 font-mono">{race.LAP3 || '-'}</td>
-                        ))}
-                      </tr>
-                      
-                      {/* Lap 4 */}
-                      <tr className="border-b">
-                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-white">Lap 4</td>
-                        {riderRaces.map((race, idx) => (
-                          <td key={idx} className="px-3 py-2 text-gray-900 font-mono">{race.LAP4 || '-'}</td>
-                        ))}
-                      </tr>
-                      
-                      {/* Total Time */}
-                      <tr className="border-b bg-gray-50">
-                        <td className="px-3 py-2 font-semibold text-gray-700 sticky left-0 bg-gray-50">Total Time</td>
-                        {riderRaces.map((race, idx) => (
-                          <td key={idx} className="px-3 py-2">
-                            <span className="text-base font-bold text-gray-900 font-mono">
-                              {formatTime(race.TotalSeconds)}
-                            </span>
-                          </td>
-                        ))}
-                      </tr>
-                      
-                      {/* Race Analysis */}
-                      <tr>
-                        <td className="px-3 py-3 font-semibold text-gray-700 align-top sticky left-0 bg-white">Race Analysis</td>
-                        {riderRaces.map((race, idx) => {
-                          const raceAnalysis = generateRaceAnalysis(race, idx, riderRaces);
-                          return (
-                            <td key={idx} className="px-3 py-3 text-xs bg-blue-50 align-top">
-                              <p className="text-gray-800 mb-2">{raceAnalysis.analysis}</p>
-                              <p className="text-gray-700">
-                                <span className="font-semibold text-blue-700">💡 {raceAnalysis.focus}</span>
-                              </p>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="bg-white rounded-lg shadow-lg p-4 text-center text-gray-600">
-                <p className="text-xs md:text-sm">
-                  🚵 Utah HS MTB 2025 Region 5 Analytics • {riderWithTeam.length} riders • {raceData.length} race entries
-                </p>
-              </div>
+                      return (
+                        <div key={idx} className="bg-white rounded-lg shadow p-4">
+                          <h3 className="font-bold text-gray-900 mb-2">{race.Race}</h3>
+                          <div className="space-y-2">
+                            <div className="flex gap-2">
+                              <span className="text-blue-600 font-semibold flex-shrink-0">📊</span>
+                              <p className="text-gray-700">{analysis}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <span className="text-green-600 font-semibold flex-shrink-0">💪</span>
+                              <p className="text-gray-700">{focus}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
-          );
-        };
+          )}
+        </div>
+      );
+    }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
 </body>
 </html>
