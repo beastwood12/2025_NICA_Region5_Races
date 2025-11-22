@@ -183,7 +183,10 @@
         
         if (lapDifference !== null) {
           if (lapDifference > 120) {
-            focus += ` Your second lap was ${Math.floor(lapDifference)}s slower—work on pacing strategy to maintain speed through the whole race.`;
+            const mins = Math.floor(lapDifference / 60);
+            const secs = Math.floor(lapDifference % 60);
+            const timeStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+            focus += ` Your second lap was ${timeStr} slower—work on pacing strategy to maintain speed through the whole race.`;
           } else if (lapDifference < 30) {
             focus += ` Great lap consistency! Your even pacing is a strength to maintain.`;
           }
