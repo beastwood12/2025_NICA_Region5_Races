@@ -159,6 +159,55 @@
           focus = `Every race is progress. Focus on building endurance and maintaining consistent lap times.`;
         }
 
+        // Calculate gap to next rider ahead (if not 1st place)
+        if (placement > 1 && race.TotalSeconds) {
+          const nextRider = raceData.find(d => 
+            d.Race === race.Race && 
+            d["Race Category"] === race["Race Category"] && 
+            parseInt(d.Placement) === placement - 1 &&
+            d.TotalSeconds
+          );
+          
+          if (nextRider) {
+            const gap = race.TotalSeconds - nextRider.TotalSeconds;
+            const mins = Math.floor(gap / 60);
+            const secs = Math.floor(gap % 60);
+            const gapStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+            
+            if (placement === 6 && gap < 60) {
+              analysis += ` You were only ${gapStr} behind podium—so close!`;
+            } else if (placement <= 10 && gap < 30) {
+              analysis += ` Just ${gapStr} behind the next rider—you're right there!`;
+            } else if (gap < 120) {
+              analysis += ` Gap to next place: ${gapStr}.`;
+            }
+          }
+        }
+
+        // Compare to previous race in same category
+        if (idx > 0 && race.TotalSeconds) {
+          const prevRaceSameCategory = allRaces
+            .slice(0, idx)
+            .reverse()
+            .find(r => r["Race Category"] === race["Race Category"] && r.TotalSeconds);
+          
+          if (prevRaceSameCategory) {
+            const timeDiff = prevRaceSameCategory.TotalSeconds - race.TotalSeconds;
+            const mins = Math.floor(Math.abs(timeDiff) / 60);
+            const secs = Math.floor(Math.abs(timeDiff) % 60);
+            const timeStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${Math.floor(Math.abs(timeDiff))}s`;
+            
+            if (timeDiff > 30) {
+              analysis += ` 🎉 Personal best! You improved by ${timeStr} from your last race in this category!`;
+            } else if (timeDiff > 10) {
+              analysis += ` Nice improvement of ${timeStr} from your last race!`;
+            } else if (timeDiff < -30) {
+              analysis += ` This was a tougher race—don't get discouraged, keep training!`;
+            }
+          }
+        }
+
+        // Compare placement to previous race
         if (idx > 0 && allRaces[idx - 1]) {
           const prevPlacement = parseInt(allRaces[idx - 1].Placement);
           const improvementOrDecline = prevPlacement - placement;
@@ -167,12 +216,10 @@
             analysis += ` Huge improvement from last race (up ${improvementOrDecline} places)!`;
           } else if (improvementOrDecline > 0) {
             analysis += ` Nice progress from last race (up ${improvementOrDecline} ${improvementOrDecline === 1 ? 'place' : 'places'}).`;
-          } else if (improvementOrDecline < -5) {
-            analysis += ` Tougher race than last time (down ${Math.abs(improvementOrDecline)} places).`;
-            focus = `Don't get discouraged—analyze what went differently and adjust your approach.`;
           }
         }
 
+        // Lap consistency analysis
         const lap1 = parseTimeToSeconds(race.LAP1);
         const lap2 = parseTimeToSeconds(race.LAP2);
         let lapDifference = null;
@@ -599,7 +646,11 @@
                               {team.top25Count}
                             </td>
                             <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
-                              {team.avgGap > 0 ? `${team.avgGap}s` : 'N/A'}
+                              {team.avgGap > 0 ? (() => {
+                                const mins = Math.floor(team.avgGap / 60);
+                                const secs = Math.floor(team.avgGap % 60);
+                                return `${mins}:${secs.toString().padStart(2, '0')}`;
+                              })() : 'N/A'}
                             </td>
                           </tr>
                         );
@@ -910,14 +961,16 @@
                           {bestPlacement === 1 ? '🥇 1st' : bestPlacement === 2 ? '🥈 2nd' : bestPlacement === 3 ? '🥉 3rd' : `#${bestPlacement}`}
                         </div>
                       </div>
-                      <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 p-3 rounded-lg">
-                        <div className="text-sm text-gray-600 mb-1">Podium Finishes</div>
-                        <div className="text-2xl font-bold text-yellow-700">🏅 {podiumCount}</div>
-                      </div>
                       <div className="bg-gradient-to-br from-green-50 to-green-100 p-3 rounded-lg">
                         <div className="text-sm text-gray-600 mb-1">Total Races</div>
                         <div className="text-2xl font-bold text-green-700">{totalRaces}</div>
                       </div>
+                      {podiumCount > 0 && (
+                        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 p-3 rounded-lg">
+                          <div className="text-sm text-gray-600 mb-1">Podium Finishes</div>
+                          <div className="text-2xl font-bold text-yellow-700">🏅 {podiumCount}</div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
